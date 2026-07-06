@@ -1,0 +1,24 @@
+# Text files
+*.md text eol=lf
+*.json text eol=lf
+*.txt text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.pdf binary
+*.docx binary
+*.pptx binary
+*.xlsx binary
+*.mp4 binary
+*.mov binary
+*.zip binary
+*.rar binary
+*.7z binary
+*.ttf binary
+*.otf binary

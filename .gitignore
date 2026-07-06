@@ -1,0 +1,40 @@
+# Obsidian local state
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.trash/
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cert
+id_rsa
+id_ed25519
+
+# Large media
+*.mp4
+*.mov
+*.mkv
+*.avi
+
+# Archives
+*.zip
+*.rar
+*.7z
+
+# Fonts
+*.ttf
+*.otf
+
+# OS files
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Agent temp
+_Agent/tmp/
+_Agent/output/
