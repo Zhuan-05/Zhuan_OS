@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 from datetime import datetime
 
 import bot
@@ -259,6 +260,18 @@ class BotAsyncBehaviorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(update.message.replies[0][1], bot.FLOW_KEYBOARD)
         self.assertEqual(context.user_data["flow"]["name"], "before_ai")
 
+
+    async def test_capture_text_records_event_for_categorized_input(self):
+        context = DummyContext()
+        update = FakeUpdate()
+        update.message.text = "study: fake study note"
+
+        with patch.object(bot, "record_telegram_capture") as record_capture, patch.object(bot, "insert_capture"):
+            await bot.capture_text(update, context)
+
+        record_capture.assert_called_once()
+        self.assertEqual(record_capture.call_args.kwargs["category"], "study")
+        self.assertEqual(record_capture.call_args.args[0], "study: fake study note")
     def test_photo_paths_use_expected_daily_media_folder_and_relative_link(self):
         now = datetime(2026, 7, 7, 9, 8, 7)
 

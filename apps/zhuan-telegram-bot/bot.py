@@ -11,6 +11,8 @@ from telegram import ReplyKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
+from event_adapter import DEFAULT_EVENT_BUS_CONFIG, record_capture_event, record_flow_event
+
 
 APP_DIR = Path(__file__).resolve().parent
 ROOT_DIR = APP_DIR.parents[1]
@@ -338,6 +340,35 @@ def today_file(now: datetime | None = None) -> Path:
     return INBOX_DIR / f"{current:%Y-%m-%d}.md"
 
 
+
+def record_telegram_capture(
+    text: str,
+    *,
+    category: str = "capture",
+    metadata: dict[str, object] | None = None,
+    occurred_at: str | None = None,
+) -> dict[str, object]:
+    return record_capture_event(
+        text,
+        category=category,
+        config=DEFAULT_EVENT_BUS_CONFIG,
+        occurred_at=occurred_at,
+        metadata=metadata,
+    )
+
+
+def record_telegram_flow(
+    flow_name: str,
+    answers: list[str],
+    *,
+    metadata: dict[str, object] | None = None,
+) -> dict[str, object]:
+    return record_flow_event(
+        flow_name,
+        answers,
+        config=DEFAULT_EVENT_BUS_CONFIG,
+        metadata=metadata,
+    )
 def is_cancel_text(text: str) -> bool:
     stripped = text.strip()
     return stripped in CANCEL_TEXTS or stripped.lower() in CANCEL_TEXTS
@@ -843,6 +874,7 @@ async def mistake(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("Use: /mistake text")
         return
 
+    record_telegram_capture(text, category="mistake", metadata={"entrypoint": "command"})
     path = append_entry_to_today("## Mistakes", build_mistake_entry(text))
     await update.message.reply_text(f"Mistake saved.\nSaved to:\n{path}")
 
@@ -856,6 +888,7 @@ async def principle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("Use: /principle text")
         return
 
+    record_telegram_capture(text, category="principle", metadata={"entrypoint": "command"})
     path = append_entry_to_today("## Principles", build_principle_entry(text))
     await update.message.reply_text(f"Principle saved.\nSaved to:\n{path}")
 
@@ -897,8 +930,10 @@ async def handle_button_or_flow(update: Update, context: ContextTypes.DEFAULT_TY
 
     quick_category = context.user_data.get("quick_capture_category")
     if quick_category:
+        categorized_text = build_categorized_capture_text(str(quick_category), text)
+        record_telegram_capture(categorized_text, category=str(quick_category), metadata={"entrypoint": "quick_category"})
         path = today_file()
-        block = build_capture_block(build_categorized_capture_text(str(quick_category), text))
+        block = build_capture_block(categorized_text)
         insert_capture(path, block)
         clear_active_flow(context)
         await reply_with_main_menu(update, SAVE_CONFIRMATION)
@@ -918,6 +953,7 @@ async def handle_button_or_flow(update: Update, context: ContextTypes.DEFAULT_TY
             await update.message.reply_text(str(questions[len(answers)]), reply_markup=FLOW_KEYBOARD)
             return True
 
+        record_telegram_flow(flow_name, answers, metadata={"entrypoint": "guided_flow"})
         if flow_name == "quick_capture":
             append_quick_capture_to_today(answers[0])
         else:
@@ -949,10 +985,12 @@ async def capture_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     category = parse_capture(text)["category"]
     if category == "capture":
+        record_telegram_capture(text, category="capture", metadata={"entrypoint": "text"})
         append_quick_capture_to_today(text)
         await reply_with_main_menu(update, QUICK_CAPTURE_FALLBACK_MESSAGE)
         return
 
+    record_telegram_capture(text, category=str(category), metadata={"entrypoint": "prefix_text"})
     path = today_file()
     block = build_capture_block(text)
     insert_capture(path, block)
