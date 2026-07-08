@@ -38,3 +38,19 @@ desktop.ini
 # Agent temp
 _Agent/tmp/
 _Agent/output/
+# Safe example environment files
+!.env.example
+!**/.env.example
+# Local/generated Event Bus data
+/data/*.db
+/data/index_state.json
+/data/events/*.jsonl
+# Local Telegram captures and media
+/08_Logs/telegram_media/
+*.jpg
+*.jpeg
+*.png
+
+# Python cache
+__pycache__/
+*.pyc
