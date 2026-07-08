@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from unittest.mock import patch
 from datetime import datetime
 
@@ -154,6 +154,8 @@ class BotFormattingTests(unittest.TestCase):
                 [bot.BUTTON_DECISION, bot.BUTTON_CONVERSATION_LOG],
                 [bot.BUTTON_MISTAKE, bot.BUTTON_PRINCIPLE],
                 [bot.BUTTON_NIGHT_REVIEW, bot.BUTTON_TODAY],
+                [bot.BUTTON_QUERY_TODAY, bot.BUTTON_RECENT],
+                [bot.BUTTON_SEARCH, bot.BUTTON_DASHBOARD_LINK],
                 [bot.BUTTON_EXPORT, bot.BUTTON_HELP],
             ],
         )
@@ -294,5 +296,120 @@ class BotAsyncBehaviorTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("- Note: Photo saved from Telegram.", entry)
 
 
+class BotQueryDashboardTests(unittest.IsolatedAsyncioTestCase):
+    async def test_today_command_replies_with_query_adapter_summary(self):
+        context = DummyContext()
+        update = FakeUpdate()
+
+        with patch.object(bot, "get_today_message", return_value="Today Events\n- sample") as get_today:
+            await bot.today(update, context)
+
+        get_today.assert_called_once()
+        self.assertIn("Today Events", update.message.replies[-1][0])
+
+    async def test_recent_command_replies_with_query_adapter_summary(self):
+        context = DummyContext()
+        update = FakeUpdate()
+
+        with patch.object(bot, "get_recent_message", return_value="Recent Events\n- sample") as get_recent:
+            await bot.recent(update, context)
+
+        get_recent.assert_called_once()
+        self.assertIn("Recent Events", update.message.replies[-1][0])
+
+    async def test_search_command_requires_keyword(self):
+        context = DummyContext()
+        context.args = []
+        update = FakeUpdate()
+
+        await bot.search(update, context)
+
+        self.assertIn("Usage: /search keyword", update.message.replies[-1][0])
+
+    async def test_search_command_replies_with_results(self):
+        context = DummyContext()
+        context.args = ["safe", "note"]
+        update = FakeUpdate()
+
+        with patch.object(bot, "get_search_message", return_value="Search Results\n- safe note") as get_search:
+            await bot.search(update, context)
+
+        get_search.assert_called_once_with("safe note")
+        self.assertIn("Search Results", update.message.replies[-1][0])
+
+    async def test_dashboard_link_missing_url_is_clear(self):
+        context = DummyContext()
+        update = FakeUpdate()
+
+        with patch.dict(bot.os.environ, {}, clear=True):
+            await bot.dashboard_link(update, context)
+
+        self.assertIn("Dashboard URL is not configured", update.message.replies[-1][0])
+        self.assertIn("Today, Recent, and Search", update.message.replies[-1][0])
+
+
 if __name__ == "__main__":
     unittest.main()
+
+class BotProductionStabilityTests(unittest.IsolatedAsyncioTestCase):
+    def test_legacy_markdown_fallback_defaults_enabled(self):
+        with patch.dict(bot.os.environ, {}, clear=True):
+            self.assertTrue(bot.legacy_markdown_fallback_enabled())
+
+    def test_legacy_markdown_fallback_can_be_disabled(self):
+        with patch.dict(bot.os.environ, {"LEGACY_MARKDOWN_FALLBACK": "false"}, clear=True):
+            self.assertFalse(bot.legacy_markdown_fallback_enabled())
+
+    async def test_event_bus_success_keeps_legacy_markdown_when_enabled(self):
+        context = DummyContext()
+        update = FakeUpdate()
+        update.message.text = "safe capture"
+
+        with patch.dict(bot.os.environ, {"LEGACY_MARKDOWN_FALLBACK": "true"}, clear=False), \
+            patch.object(bot, "record_telegram_capture", return_value={"event_id": "evt-123", "type": "quick_capture", "source": "telegram_bot"}) as record_capture, \
+            patch.object(bot, "append_quick_capture_to_today", return_value=bot.INBOX_DIR / "fake.md") as append_legacy:
+            await bot.capture_text(update, context)
+
+        record_capture.assert_called_once()
+        append_legacy.assert_called_once_with("safe capture")
+
+    async def test_event_bus_success_can_disable_legacy_markdown(self):
+        context = DummyContext()
+        update = FakeUpdate()
+        update.message.text = "safe capture"
+
+        with patch.dict(bot.os.environ, {"LEGACY_MARKDOWN_FALLBACK": "false"}, clear=False), \
+            patch.object(bot, "record_telegram_capture", return_value={"event_id": "evt-123", "type": "quick_capture", "source": "telegram_bot"}), \
+            patch.object(bot, "append_quick_capture_to_today") as append_legacy:
+            await bot.capture_text(update, context)
+
+        append_legacy.assert_not_called()
+
+    async def test_event_bus_failure_is_reported_and_uses_legacy_when_enabled(self):
+        context = DummyContext()
+        update = FakeUpdate()
+        update.message.text = "private body should not be logged"
+
+        with patch.dict(bot.os.environ, {"LEGACY_MARKDOWN_FALLBACK": "true"}, clear=False), \
+            patch.object(bot, "record_telegram_capture", side_effect=RuntimeError("event bus down")), \
+            patch.object(bot, "append_quick_capture_to_today", return_value=bot.INBOX_DIR / "fake.md") as append_legacy, \
+            self.assertLogs("zhuan.telegram_bot", level="ERROR") as logs:
+            await bot.capture_text(update, context)
+
+        append_legacy.assert_called_once_with("private body should not be logged")
+        reply = update.message.replies[-1][0]
+        self.assertIn("Event Bus write failed", reply)
+        self.assertIn("legacy Markdown fallback", reply)
+        joined_logs = "\n".join(logs.output)
+        self.assertIn("Event Bus write failed", joined_logs)
+        self.assertNotIn("private body should not be logged", joined_logs)
+
+    def test_success_logging_includes_event_id_without_message_body(self):
+        with patch.object(bot, "record_capture_event", return_value={"event_id": "evt-123", "type": "quick_capture", "source": "telegram_bot"}), \
+            self.assertLogs("zhuan.telegram_bot", level="INFO") as logs:
+            bot.record_telegram_capture("private body should not be logged", category="capture")
+
+        joined_logs = "\n".join(logs.output)
+        self.assertIn("evt-123", joined_logs)
+        self.assertIn("quick_capture", joined_logs)
+        self.assertNotIn("private body should not be logged", joined_logs)

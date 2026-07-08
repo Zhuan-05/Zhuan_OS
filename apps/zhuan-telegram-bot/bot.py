@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import logging
 import os
 import sys
 from datetime import datetime
@@ -12,12 +13,19 @@ from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from event_adapter import DEFAULT_EVENT_BUS_CONFIG, record_capture_event, record_flow_event
+from query_adapter import get_dashboard_link_message, get_recent_message, get_search_message, get_today_message
 
 
 APP_DIR = Path(__file__).resolve().parent
 ROOT_DIR = APP_DIR.parents[1]
 INBOX_DIR = ROOT_DIR / "08_Logs" / "telegram_inbox"
 MEDIA_DIR = ROOT_DIR / "08_Logs" / "telegram_media"
+LOGGER = logging.getLogger("zhuan.telegram_bot")
+LEGACY_MARKDOWN_FALLBACK_ENV = "LEGACY_MARKDOWN_FALLBACK"
+EVENT_BUS_FAILURE_MESSAGE = (
+    "Event Bus write failed. Capture was not saved as JSONL source of truth. "
+    "Check logs and run D:\\Zhuan_OS\\scripts\\health_check.py."
+)
 
 BUTTON_BEFORE_AI = "Think Before AI"
 BUTTON_QUICK_CAPTURE = "Quick Capture"
@@ -29,6 +37,10 @@ BUTTON_MISTAKE = "❌ Mistake Log"
 BUTTON_PRINCIPLE = "Principle Log"
 BUTTON_NIGHT_REVIEW = "Night Review"
 BUTTON_TODAY = "Today Summary"
+BUTTON_QUERY_TODAY = "Today"
+BUTTON_RECENT = "Recent"
+BUTTON_SEARCH = "Search"
+BUTTON_DASHBOARD_LINK = "Dashboard Link"
 BUTTON_EXPORT = "Export Today"
 BUTTON_HELP = "❓ Help"
 BUTTON_BACK = "⬅️ Back"
@@ -39,6 +51,8 @@ MAIN_MENU_BUTTONS = [
     [BUTTON_DECISION, BUTTON_CONVERSATION_LOG],
     [BUTTON_MISTAKE, BUTTON_PRINCIPLE],
     [BUTTON_NIGHT_REVIEW, BUTTON_TODAY],
+    [BUTTON_QUERY_TODAY, BUTTON_RECENT],
+    [BUTTON_SEARCH, BUTTON_DASHBOARD_LINK],
     [BUTTON_EXPORT, BUTTON_HELP],
 ]
 MAIN_MENU_BUTTON_SET = {button for row in MAIN_MENU_BUTTONS for button in row}
@@ -208,7 +222,10 @@ COMMAND_EXAMPLES = f"""{HELP_TEXT}
 Backup commands:
 /menu - show button menu
 /cancel - cancel current flow
-/today - category summary for today
+/today - query today's Event Bus events from SQLite
+/recent - latest Event Bus events from SQLite
+/search keyword - search Event Bus events from SQLite
+/dashboard - show configured dashboard link
 /export - clean Markdown for daily judgment review
 /review - daily judgment review template
 /beforeai - think before asking AI
@@ -341,6 +358,21 @@ def today_file(now: datetime | None = None) -> Path:
 
 
 
+def legacy_markdown_fallback_enabled() -> bool:
+    value = os.getenv(LEGACY_MARKDOWN_FALLBACK_ENV, "true").strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
+def log_event_bus_success(event: dict[str, object], *, action: str) -> None:
+    LOGGER.info(
+        "Event Bus write succeeded action=%s event_id=%s type=%s source=%s",
+        action,
+        event.get("event_id"),
+        event.get("type"),
+        event.get("source"),
+    )
+
+
 def record_telegram_capture(
     text: str,
     *,
@@ -348,13 +380,15 @@ def record_telegram_capture(
     metadata: dict[str, object] | None = None,
     occurred_at: str | None = None,
 ) -> dict[str, object]:
-    return record_capture_event(
+    event = record_capture_event(
         text,
         category=category,
         config=DEFAULT_EVENT_BUS_CONFIG,
         occurred_at=occurred_at,
         metadata=metadata,
     )
+    log_event_bus_success(event, action="capture")
+    return event
 
 
 def record_telegram_flow(
@@ -363,12 +397,75 @@ def record_telegram_flow(
     *,
     metadata: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    return record_flow_event(
+    event = record_flow_event(
         flow_name,
         answers,
         config=DEFAULT_EVENT_BUS_CONFIG,
         metadata=metadata,
     )
+    log_event_bus_success(event, action="flow")
+    return event
+
+
+def write_legacy_markdown_if_enabled(writer):
+    if not legacy_markdown_fallback_enabled():
+        return None
+    return writer()
+
+
+async def report_event_bus_failure(update: Update, exc: Exception, *, legacy_writer=None) -> None:
+    fallback_enabled = legacy_markdown_fallback_enabled()
+    LOGGER.exception("Event Bus write failed legacy_markdown_fallback=%s", fallback_enabled)
+    if fallback_enabled and legacy_writer is not None:
+        try:
+            path = legacy_writer()
+        except Exception:
+            LOGGER.exception("Legacy Markdown fallback failed after Event Bus failure")
+            await update.message.reply_text(
+                EVENT_BUS_FAILURE_MESSAGE + " Legacy Markdown fallback also failed."
+            )
+            return
+        await update.message.reply_text(
+            EVENT_BUS_FAILURE_MESSAGE + f" Saved to legacy Markdown fallback:\n{path}"
+        )
+        return
+    await update.message.reply_text(
+        EVENT_BUS_FAILURE_MESSAGE + " Legacy Markdown fallback is disabled."
+    )
+
+
+async def record_capture_or_report(
+    update: Update,
+    text: str,
+    *,
+    category: str,
+    metadata: dict[str, object],
+    legacy_writer=None,
+) -> bool:
+    try:
+        record_telegram_capture(text, category=category, metadata=metadata)
+    except Exception as exc:
+        await report_event_bus_failure(update, exc, legacy_writer=legacy_writer)
+        return False
+    write_legacy_markdown_if_enabled(legacy_writer) if legacy_writer is not None else None
+    return True
+
+
+async def record_flow_or_report(
+    update: Update,
+    flow_name: str,
+    answers: list[str],
+    *,
+    metadata: dict[str, object],
+    legacy_writer=None,
+) -> bool:
+    try:
+        record_telegram_flow(flow_name, answers, metadata=metadata)
+    except Exception as exc:
+        await report_event_bus_failure(update, exc, legacy_writer=legacy_writer)
+        return False
+    write_legacy_markdown_if_enabled(legacy_writer) if legacy_writer is not None else None
+    return True
 def is_cancel_text(text: str) -> bool:
     stripped = text.strip()
     return stripped in CANCEL_TEXTS or stripped.lower() in CANCEL_TEXTS
@@ -764,15 +861,7 @@ def start_main_menu_button_flow(context: ContextTypes.DEFAULT_TYPE, text: str) -
 
 
 async def show_today_summary(update: Update) -> None:
-    path = today_file()
-    if not path.exists():
-        await update.message.reply_text("No captures for today yet.")
-        return
-
-    content = path.read_text(encoding="utf-8")
-    summary = build_today_summary(content)
-    await update.message.reply_text(f"{summary}\n\nSaved at:\n{path}")
-
+    await update.message.reply_text(get_today_message())
 
 async def show_export(update: Update) -> None:
     path = today_file()
@@ -835,6 +924,28 @@ async def today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     await show_today_summary(update)
+
+
+async def recent(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if await reject_if_not_allowed(update):
+        return
+
+    await update.message.reply_text(get_recent_message())
+
+
+async def search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if await reject_if_not_allowed(update):
+        return
+
+    keyword = " ".join(getattr(context, "args", [])).strip()
+    await update.message.reply_text(get_search_message(keyword))
+
+
+async def dashboard_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if await reject_if_not_allowed(update):
+        return
+
+    await update.message.reply_text(get_dashboard_link_message(os.getenv("WEB_DASHBOARD_URL")))
 
 
 async def export(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -917,8 +1028,17 @@ async def handle_button_or_flow(update: Update, context: ContextTypes.DEFAULT_TY
         if question is not None:
             await update.message.reply_text(question, reply_markup=FLOW_KEYBOARD)
             return True
-        if text == BUTTON_TODAY:
+        if text in {BUTTON_TODAY, BUTTON_QUERY_TODAY}:
             await show_today_summary(update)
+            return True
+        if text == BUTTON_RECENT:
+            await update.message.reply_text(get_recent_message())
+            return True
+        if text == BUTTON_SEARCH:
+            await update.message.reply_text(get_search_message(""))
+            return True
+        if text == BUTTON_DASHBOARD_LINK:
+            await update.message.reply_text(get_dashboard_link_message(os.getenv("WEB_DASHBOARD_URL")))
             return True
         if text == BUTTON_EXPORT:
             await show_export(update)
@@ -931,10 +1051,15 @@ async def handle_button_or_flow(update: Update, context: ContextTypes.DEFAULT_TY
     quick_category = context.user_data.get("quick_capture_category")
     if quick_category:
         categorized_text = build_categorized_capture_text(str(quick_category), text)
-        record_telegram_capture(categorized_text, category=str(quick_category), metadata={"entrypoint": "quick_category"})
-        path = today_file()
-        block = build_capture_block(categorized_text)
-        insert_capture(path, block)
+
+        def write_legacy() -> Path:
+            path = today_file()
+            block = build_capture_block(categorized_text)
+            insert_capture(path, block)
+            return path
+
+        if not await record_capture_or_report(update, categorized_text, category=str(quick_category), metadata={"entrypoint": "quick_category"}, legacy_writer=write_legacy):
+            return True
         clear_active_flow(context)
         await reply_with_main_menu(update, SAVE_CONFIRMATION)
         return True
@@ -953,12 +1078,14 @@ async def handle_button_or_flow(update: Update, context: ContextTypes.DEFAULT_TY
             await update.message.reply_text(str(questions[len(answers)]), reply_markup=FLOW_KEYBOARD)
             return True
 
-        record_telegram_flow(flow_name, answers, metadata={"entrypoint": "guided_flow"})
-        if flow_name == "quick_capture":
-            append_quick_capture_to_today(answers[0])
-        else:
+        def write_legacy() -> Path:
+            if flow_name == "quick_capture":
+                return append_quick_capture_to_today(answers[0])
             section, entry = build_flow_entry(flow_name, answers)
-            append_entry_to_today(section, entry)
+            return append_entry_to_today(section, entry)
+
+        if not await record_flow_or_report(update, flow_name, answers, metadata={"entrypoint": "guided_flow"}, legacy_writer=write_legacy):
+            return True
         clear_active_flow(context)
         await reply_with_main_menu(update, str(flow["confirmation"]))
         return True
@@ -985,15 +1112,25 @@ async def capture_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     category = parse_capture(text)["category"]
     if category == "capture":
-        record_telegram_capture(text, category="capture", metadata={"entrypoint": "text"})
-        append_quick_capture_to_today(text)
+        if not await record_capture_or_report(
+            update,
+            text,
+            category="capture",
+            metadata={"entrypoint": "text"},
+            legacy_writer=lambda: append_quick_capture_to_today(text),
+        ):
+            return
         await reply_with_main_menu(update, QUICK_CAPTURE_FALLBACK_MESSAGE)
         return
 
-    record_telegram_capture(text, category=str(category), metadata={"entrypoint": "prefix_text"})
-    path = today_file()
-    block = build_capture_block(text)
-    insert_capture(path, block)
+    def write_legacy() -> Path:
+        path = today_file()
+        block = build_capture_block(text)
+        insert_capture(path, block)
+        return path
+
+    if not await record_capture_or_report(update, text, category=str(category), metadata={"entrypoint": "prefix_text"}, legacy_writer=write_legacy):
+        return
     await reply_with_main_menu(update, SAVE_CONFIRMATION)
 
 
@@ -1056,6 +1193,9 @@ def main() -> None:
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("commands", commands))
     application.add_handler(CommandHandler("today", today))
+    application.add_handler(CommandHandler("recent", recent))
+    application.add_handler(CommandHandler("search", search))
+    application.add_handler(CommandHandler("dashboard", dashboard_link))
     application.add_handler(CommandHandler("export", export))
     application.add_handler(CommandHandler("review", review))
     application.add_handler(CommandHandler("beforeai", beforeai))
