@@ -1,0 +1,2 @@
+﻿# No external runtime dependencies.
+# The dashboard uses Python stdlib http.server and core.query.events_query.
