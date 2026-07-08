@@ -54,3 +54,11 @@ _Agent/output/
 # Python cache
 __pycache__/
 *.pyc
+
+# Sprint C1 active-root local/generated paths
+/data/
+/08_Logs/
+/logs/
+.venv/
+agent_workspace/inbox/telegram_inbox/
+agent_workspace/inbox/telegram_media/

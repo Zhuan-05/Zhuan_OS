@@ -51,6 +51,52 @@ Then open:
 http://127.0.0.1:8765
 ```
 
+
+
+## AI 7-layer decision page
+
+Start the dashboard, then open:
+
+```text
+http://127.0.0.1:8765/decision
+```
+
+Configuration is environment-only:
+
+```text
+OPENAI_API_KEY=...
+# or
+AI_API_KEY=...
+```
+
+Optional model override:
+
+```text
+OPENAI_MODEL=gpt-4o-mini
+```
+
+Do not commit API keys. If the key is missing, the page should show a clear error and should not save a decision event.
+
+A successful submission creates a `decision_log` Event Bus event with `source="web_dashboard"`, then rebuilds SQLite. The page must not scan `D:\Zhuan_Vault`.
+
+## Telegram capture stability
+
+Telegram text capture writes to the Event Bus first. The JSONL event log is the source of truth and SQLite is rebuilt as a query index.
+
+Legacy Markdown fallback is enabled by default:
+
+```text
+LEGACY_MARKDOWN_FALLBACK=true
+```
+
+Disable fallback only after Event Bus confidence is high:
+
+```text
+LEGACY_MARKDOWN_FALLBACK=false
+```
+
+If Event Bus writing fails, the bot must report the failure clearly. Logs may include `event_id`, event `type`, and `source`, but must not include message bodies, bot tokens, or `.env` values.
+
 ## Local-only and ignored files
 
 These are operational/runtime files and should remain local-only:

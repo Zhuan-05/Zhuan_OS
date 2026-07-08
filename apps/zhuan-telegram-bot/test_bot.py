@@ -1,4 +1,4 @@
-﻿import unittest
+import unittest
 from unittest.mock import patch
 from datetime import datetime
 
@@ -145,21 +145,75 @@ class BotFormattingTests(unittest.TestCase):
         self.assertIn("## Mistakes\n\nmistake entry\n", content)
         self.assertLess(content.index("## Mistakes"), content.index("## Principles"))
 
-    def test_main_menu_contains_button_first_actions(self):
+    def test_main_menu_contains_exactly_six_human_operation_buttons(self):
         self.assertEqual(
-            bot.MAIN_MENU_BUTTONS,
+            bot.MAIN_MENU,
             [
-                [bot.BUTTON_BEFORE_AI, bot.BUTTON_QUICK_CAPTURE],
-                [bot.BUTTON_STUDY_LOG, bot.BUTTON_ASSIGNMENT_PROJECT],
-                [bot.BUTTON_DECISION, bot.BUTTON_CONVERSATION_LOG],
+                [bot.BUTTON_CAPTURE, bot.BUTTON_TODAY],
+                [bot.BUTTON_DECISION, bot.BUTTON_REVIEW],
+                [bot.BUTTON_SEARCH, bot.BUTTON_MORE],
+            ],
+        )
+        flattened = [button for row in bot.MAIN_MENU for button in row]
+        self.assertEqual(flattened, [
+            "Capture",
+            "Today",
+            "Decision",
+            "Review",
+            "Search",
+            "More",
+        ])
+
+    def test_old_first_level_buttons_do_not_appear_in_main_menu(self):
+        flattened = [button for row in bot.MAIN_MENU for button in row]
+        for old_button in [
+            bot.BUTTON_BEFORE_AI,
+            bot.BUTTON_STUDY_LOG,
+            bot.BUTTON_ASSIGNMENT_PROJECT,
+            bot.BUTTON_DECISION_LEGACY,
+            bot.BUTTON_CONVERSATION_LOG,
+            bot.BUTTON_MISTAKE,
+            bot.BUTTON_PRINCIPLE,
+            bot.BUTTON_NIGHT_REVIEW,
+            bot.BUTTON_TODAY_LEGACY,
+            bot.BUTTON_EXPORT,
+            bot.BUTTON_DASHBOARD_LINK,
+            bot.BUTTON_RECENT,
+            bot.BUTTON_HELP,
+        ]:
+            self.assertNotIn(old_button, flattened)
+
+    def test_capture_menu_contains_capture_related_buttons(self):
+        self.assertEqual(
+            bot.CAPTURE_MENU,
+            [
+                [bot.BUTTON_QUICK_CAPTURE, bot.BUTTON_STUDY_LOG],
                 [bot.BUTTON_MISTAKE, bot.BUTTON_PRINCIPLE],
-                [bot.BUTTON_NIGHT_REVIEW, bot.BUTTON_TODAY],
-                [bot.BUTTON_QUERY_TODAY, bot.BUTTON_RECENT],
-                [bot.BUTTON_SEARCH, bot.BUTTON_DASHBOARD_LINK],
-                [bot.BUTTON_EXPORT, bot.BUTTON_HELP],
+                [bot.BUTTON_FOOD_LIFE, bot.BUTTON_PHOTO],
+                [bot.BUTTON_BACK],
             ],
         )
 
+    def test_review_menu_contains_review_related_buttons(self):
+        self.assertEqual(
+            bot.REVIEW_MENU,
+            [
+                [bot.BUTTON_NIGHT_REVIEW, bot.BUTTON_WEEKLY_REVIEW],
+                [bot.BUTTON_MISTAKE_REVIEW, bot.BUTTON_PRINCIPLE_EXTRACT],
+                [bot.BUTTON_BACK],
+            ],
+        )
+
+    def test_more_menu_contains_low_frequency_buttons(self):
+        self.assertEqual(
+            bot.MORE_MENU,
+            [
+                [bot.BUTTON_RECENT, bot.BUTTON_DASHBOARD_LINK],
+                [bot.BUTTON_EXPORT, bot.BUTTON_HEALTH_CHECK],
+                [bot.BUTTON_HELP, bot.BUTTON_SETTINGS],
+                [bot.BUTTON_BACK],
+            ],
+        )
     def test_quick_capture_menu_contains_categories_and_back(self):
         flattened = [button for row in bot.QUICK_CAPTURE_BUTTONS for button in row]
 
@@ -297,6 +351,75 @@ class BotAsyncBehaviorTests(unittest.IsolatedAsyncioTestCase):
 
 
 class BotQueryDashboardTests(unittest.IsolatedAsyncioTestCase):
+    async def test_capture_button_opens_capture_menu(self):
+        context = DummyContext()
+        update = FakeUpdate()
+
+        handled = await bot.handle_button_or_flow(update, context, bot.BUTTON_CAPTURE)
+
+        self.assertTrue(handled)
+        self.assertEqual(update.message.replies[-1][1], bot.CAPTURE_MENU_KEYBOARD)
+
+    async def test_review_button_opens_review_menu(self):
+        context = DummyContext()
+        update = FakeUpdate()
+
+        handled = await bot.handle_button_or_flow(update, context, bot.BUTTON_REVIEW)
+
+        self.assertTrue(handled)
+        self.assertEqual(update.message.replies[-1][1], bot.REVIEW_MENU_KEYBOARD)
+
+    async def test_more_button_opens_more_menu(self):
+        context = DummyContext()
+        update = FakeUpdate()
+
+        handled = await bot.handle_button_or_flow(update, context, bot.BUTTON_MORE)
+
+        self.assertTrue(handled)
+        self.assertEqual(update.message.replies[-1][1], bot.MORE_MENU_KEYBOARD)
+
+    async def test_back_button_returns_to_main_menu(self):
+        context = DummyContext()
+        update = FakeUpdate()
+
+        handled = await bot.handle_button_or_flow(update, context, bot.BUTTON_BACK)
+
+        self.assertTrue(handled)
+        self.assertEqual(update.message.replies[-1][1], bot.MAIN_MENU_KEYBOARD)
+
+    async def test_search_button_shows_command_hint(self):
+        context = DummyContext()
+        update = FakeUpdate()
+
+        handled = await bot.handle_button_or_flow(update, context, bot.BUTTON_SEARCH)
+
+        self.assertTrue(handled)
+        self.assertEqual(update.message.replies[-1][0], "Use /search keyword")
+        context = DummyContext()
+        update = FakeUpdate()
+
+        handled = await bot.handle_button_or_flow(update, context, bot.BUTTON_MORE)
+
+        self.assertTrue(handled)
+        self.assertEqual(update.message.replies[-1][1], bot.MORE_MENU_KEYBOARD)
+
+    async def test_back_button_returns_to_main_menu(self):
+        context = DummyContext()
+        update = FakeUpdate()
+
+        handled = await bot.handle_button_or_flow(update, context, bot.BUTTON_BACK)
+
+        self.assertTrue(handled)
+        self.assertEqual(update.message.replies[-1][1], bot.MAIN_MENU_KEYBOARD)
+
+    async def test_search_button_shows_command_hint(self):
+        context = DummyContext()
+        update = FakeUpdate()
+
+        handled = await bot.handle_button_or_flow(update, context, bot.BUTTON_SEARCH)
+
+        self.assertTrue(handled)
+        self.assertEqual(update.message.replies[-1][0], "Use /search keyword")
     async def test_today_command_replies_with_query_adapter_summary(self):
         context = DummyContext()
         update = FakeUpdate()

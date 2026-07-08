@@ -2,13 +2,15 @@
 
 This is a beginner-friendly Telegram bot for quick daily capture into Zhuan_OS.
 
-It runs locally on your laptop, uses Telegram polling, and writes Markdown files only.
+It runs locally on your laptop, uses Telegram polling, writes captures to the Event Bus JSONL source of truth, rebuilds the SQLite query index, and can optionally keep legacy Markdown fallback files.
 
 ## What It Does
 
-- Saves normal Telegram text messages as timestamped capture items.
+- Saves normal Telegram text messages as V1 Event Bus events.
 - Supports simple prefixes like `spend:`, `study:`, `assignment:`, `mistake:`, and `principle:`.
-- Writes captures to `08_Logs/telegram_inbox/YYYY-MM-DD.md`.
+- Appends source-of-truth events to `D:\Zhuan_OS\data\events\events-YYYY-MM.jsonl`.
+- Rebuilds the SQLite query index at `D:\Zhuan_OS\data\zhuan_os.db`.
+- Keeps optional legacy Markdown fallback writes under `agent_workspace/inbox/telegram_inbox/YYYY-MM-DD.md` by default.
 - Lets you check your Telegram user ID with `/whoami`.
 - Summarizes today's captures by category with `/today`.
 - Exports a clean judgment-training Markdown template with `/export`.
@@ -16,7 +18,7 @@ It runs locally on your laptop, uses Telegram polling, and writes Markdown files
 - Shows a persistent button menu so you do not need to remember commands.
 - Lets any main menu button interrupt the current guided flow and start the new one.
 - Saves Telegram photos locally and links them from the daily Markdown inbox.
-- Does not use a database, AI API, webhook, or cloud deployment.
+- Does not use an AI API, webhook, cloud deployment, Bot Assistant, or MCP. SQLite is only a local rebuildable query index.
 
 ## How To Create A Bot With BotFather
 
@@ -67,6 +69,26 @@ You will fill it after running `/whoami`.
 
 Do not put values like `@zhuan_capture_bot` or `zhuan_capture_bot` into `ALLOWED_USER_ID`.
 
+## Event Bus And Legacy Markdown
+
+Event Bus JSONL is the primary source of truth. Legacy Markdown under `agent_workspace/inbox/telegram_inbox/` is still enabled by default as a local fallback during V1 stabilization.
+
+Set this in `.env` to control legacy Markdown writes:
+
+```text
+LEGACY_MARKDOWN_FALLBACK=true
+```
+
+Use `false`, `0`, `no`, or `off` to disable legacy Markdown writes after Event Bus confidence is high:
+
+```text
+LEGACY_MARKDOWN_FALLBACK=false
+```
+
+If Event Bus writing fails, the bot logs the failure without message body content. When legacy fallback is enabled, it attempts to save the capture to Markdown and replies with a clear warning. When fallback is disabled, it replies that the capture was not saved as source of truth.
+
+Safe logs include `event_id`, event `type`, and `source`; logs must not include message bodies, bot tokens, or `.env` values.
+
 ## How To Run Locally
 
 Open Command Prompt or PowerShell and run:
@@ -98,30 +120,46 @@ Start or reopen the menu with:
 Main buttons:
 
 ```text
-Think Before AI
-Quick Capture
-Study Log
-Assignment / Project
-⚖️ Decision Log
-Conversation Log
-❌ Mistake Log
-Principle Log
-Night Review
-Today Summary
-Export Today
-❓ Help
+Capture | Today
+Decision | Review
+Search | More
 ```
 
+Capture buttons:
+
+```text
+Quick Capture | Study Log
+Mistake Log | Principle Log
+Food / Life | Photo
+Back
+```
+
+Review buttons:
+
+```text
+Night Review | Weekly Review
+Mistake Review | Principle Extract
+Back
+```
+
+More buttons:
+
+```text
+Recent | Dashboard Link
+Export Today | Health Check
+Help | Settings
+Back
+```
 When you are inside a guided flow, the bot shows a smaller keyboard:
 
 ```text
 ⬅️ Back
-Quick Capture | Today Summary
+Quick Capture | Today
 ```
 
-Tap `⬅️ Back` to cancel the current flow and return to the main menu.
+Tap `Back` to cancel the current flow and return to the main menu.
 
-Any main menu button can interrupt the current flow. For example, if you started `Think Before AI` and then tap `Quick Capture`, the bot discards the incomplete `Think Before AI` answers and immediately starts Quick Capture.
+Any main menu button can interrupt the current flow. For example, if you started a guided flow and then tap another flow button, the bot discards the incomplete answers and starts the new flow.
 
 Cancel options:
 
@@ -175,18 +213,49 @@ Your laptop connects outward to Telegram's servers and asks for new messages. Yo
 
 ## Phone Usage Examples
 
-Use the menu buttons for normal daily usage:
+Use the main menu for the fastest actions:
 
 ```text
-Morning: Think Before AI
-During day: Quick Capture
-Study: Study Log
-Assignment / project: Assignment / Project
-Important choice: ⚖️ Decision Log
-Important conversation: Conversation Log
-Mistake: ❌ Mistake Log
-Principle: Principle Log
-Night: Night Review
+Capture: open capture actions
+Today: show today's SQLite events
+Decision: start a decision log
+Review: open review actions
+Search: shows Use /search keyword
+More: open lower-frequency actions
+```
+
+Use Capture for event-writing actions:
+
+```text
+Quick Capture
+Study Log
+Mistake Log
+Principle Log
+Food / Life
+Photo
+Back
+```
+
+Use Review for reflection actions:
+
+```text
+Night Review
+Weekly Review
+Mistake Review
+Principle Extract
+Back
+```
+
+Use More for lower-frequency actions:
+
+```text
+Recent
+Dashboard Link
+Export Today
+Health Check
+Help
+Settings
+Back
 ```
 
 Quick Capture asks one question:
@@ -215,6 +284,9 @@ Useful commands:
 /cancel
 /whoami
 /today
+/recent
+/search keyword
+/dashboard
 /export
 /review
 /beforeai
@@ -344,10 +416,22 @@ Score 1-5:
 
 ## Output Format
 
-Captures are saved here:
+Primary events are saved here:
 
 ```text
-D:\Zhuan_OS\08_Logs\telegram_inbox\YYYY-MM-DD.md
+D:\Zhuan_OS\data\events\events-YYYY-MM.jsonl
+```
+
+The local SQLite query index is rebuilt here:
+
+```text
+D:\Zhuan_OS\data\zhuan_os.db
+```
+
+When `LEGACY_MARKDOWN_FALLBACK=true`, fallback Markdown is also saved here:
+
+```text
+D:\Zhuan_OS\agent_workspace\inbox\telegram_inbox\YYYY-MM-DD.md
 ```
 
 Each daily file uses this Markdown shape:
@@ -396,7 +480,7 @@ Interpreted:
 
 Do not send secrets, passwords, private keys, bank details, or very private personal data to this bot yet.
 
-This MVP stores local Markdown files only, but Telegram messages still pass through Telegram's service.
+This MVP stores local Event Bus JSONL, a rebuildable SQLite index, and optional local Markdown fallback files. Telegram messages still pass through Telegram's service.
 
 Do not touch or send private vault files through the bot.
 
@@ -407,7 +491,7 @@ Photo safety: do not send private documents, passwords, IC/passport, bank screen
 Photos are stored locally under:
 
 ```text
-D:\Zhuan_OS\08_Logs\telegram_media\YYYY-MM-DD\
+D:\Zhuan_OS\agent_workspace\inbox\telegram_media\YYYY-MM-DD\
 ```
 
 ## Current Limitation

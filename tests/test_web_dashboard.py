@@ -106,6 +106,97 @@ class WebDashboardTests(unittest.TestCase):
         self.assertNotIn("rglob", source)
 
 
+class DecisionPageTests(unittest.TestCase):
+    def test_decision_get_page_renders_form(self):
+        app = load_dashboard_module()
+
+        response = app.build_response("/decision")
+
+        self.assertEqual(response.status, 200)
+        self.assertIn("AI 7-Layer Decision", response.body)
+        for field in ["decision_question", "context", "options", "constraints", "urgency"]:
+            self.assertIn(field, response.body)
+
+    def test_missing_ai_key_is_handled_without_crashing(self):
+        app = load_dashboard_module()
+        body = "decision_question=Choose+A&context=Safe+context&options=A+or+B&constraints=low+risk&urgency=today"
+
+        response = app.build_decision_response(
+            "POST",
+            body,
+            ai_client=lambda form: (_ for _ in ()).throw(app.MissingAIKeyError("OPENAI_API_KEY or AI_API_KEY is missing")),
+        )
+
+        self.assertEqual(response.status, 200)
+        self.assertIn("AI key is missing", response.body)
+        self.assertIn("Decision was not saved", response.body)
+
+    def test_decision_event_payload_shape_is_valid_and_indexed(self):
+        app = load_dashboard_module()
+        form = {
+            "decision_question": "Which safe option should I choose?",
+            "context": "Synthetic context only",
+            "options": "Option A; Option B",
+            "constraints": "No private data",
+            "urgency": "today",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            result = app.save_decision_event(
+                form,
+                {
+                    "ai_response": "Synthetic 7-layer analysis",
+                    "seven_layer_sections": {title: f"sample {title}" for title in app.SEVEN_LAYER_TITLES},
+                },
+                events_dir=base / "events",
+                db_path=base / "zhuan_os.db",
+            )
+
+            events = list(app.read_events(base / "events"))
+            self.assertEqual(len(events), 1)
+            event = events[0]
+            self.assertEqual(event["event_id"], result["event_id"])
+            self.assertEqual(event["type"], "decision_log")
+            self.assertEqual(event["source"], "web_dashboard")
+            payload = event["payload"]
+            for key in ["decision_question", "context", "options", "constraints", "urgency", "ai_response", "seven_layer_sections"]:
+                self.assertIn(key, payload)
+            self.assertEqual(set(payload["seven_layer_sections"].keys()), set(app.SEVEN_LAYER_TITLES))
+            indexed = app.events_query.get_events_by_type(base / "zhuan_os.db", "decision_log", include_test=True)
+            self.assertEqual(len(indexed), 1)
+
+    def test_decision_post_saves_event_with_mock_ai(self):
+        app = load_dashboard_module()
+        body = "decision_question=Choose+A&context=Safe+context&options=A+or+B&constraints=low+risk&urgency=today"
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            response = app.build_decision_response(
+                "POST",
+                body,
+                events_dir=base / "events",
+                db_path=base / "zhuan_os.db",
+                ai_client=lambda form: {
+                    "ai_response": "Mock analysis",
+                    "seven_layer_sections": {title: f"mock {title}" for title in app.SEVEN_LAYER_TITLES},
+                },
+            )
+
+            events = list(app.read_events(base / "events"))
+
+        self.assertEqual(response.status, 200)
+        self.assertIn("Decision saved", response.body)
+        self.assertEqual(events[0]["type"], "decision_log")
+        self.assertEqual(events[0]["payload"]["decision_question"], "Choose A")
+
+    def test_decision_source_does_not_scan_vault_or_write_random_files(self):
+        source = APP_PATH.read_text(encoding="utf-8")
+        self.assertNotIn("Zhuan_Vault", source)
+        self.assertNotIn("os.walk", source)
+        self.assertNotIn("rglob", source)
+        self.assertNotIn("open(\"", source)
+        self.assertNotIn("write_text", source)
+
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -208,3 +208,141 @@ Get-ChildItem D:\Zhuan_OS\docs -Force
 ```
 
 Only after explicit approval, move docs route by route with `Move-Item -LiteralPath ...`. Never use broad wildcards for migration.
+## Sprint C1 Active Root Reset
+
+Sprint C1 moves old root-level legacy folders out of the active root into:
+
+```text
+D:\Zhuan_OS\legacy_removed\root_legacy_2026_07
+```
+
+This is a move-only archival reset. It is not deletion, not Vault migration, and not approval to commit private or generated files.
+
+### Future Active Root
+
+```text
+D:\Zhuan_OS
+|-- apps
+|-- core
+|-- data
+|-- config
+|-- scripts
+|-- launchers
+|-- tests
+|-- docs
+|-- agent_workspace
+|-- legacy_removed
+|-- README.md
+|-- AGENTS.md
+|-- CLAUDE.md
+|-- .gitignore
+`-- .gitattributes
+```
+
+Hidden folders may remain for now:
+
+```text
+.git
+.obsidian
+.agents
+.codex
+```
+
+### Legacy Folders Moved
+
+These folders are Sprint C1 legacy candidates and should live under `legacy_removed/root_legacy_2026_07/` when present:
+
+```text
+00_Command_Center
+00_Inbox
+01_Inbox
+02_AI_Agents
+03_Workflows
+04_Prompts
+05_Templates
+06_Projects
+07_Principles
+08_Logs
+09_References
+logs
+prompts
+01_Daily
+02_Learning
+03_Projects
+05_Decision
+06_Review
+07_AI_Workflows
+90_Archive_Index
+Templates
+_Agent
+_Context
+```
+
+### Telegram Bot Dependency Map
+
+Telegram Bot active folder:
+
+```text
+D:\Zhuan_OS\apps\zhuan-telegram-bot
+```
+
+Required runtime dependencies:
+
+```text
+D:\Zhuan_OS\core\event_bus
+D:\Zhuan_OS\core\schema
+D:\Zhuan_OS\core\storage
+D:\Zhuan_OS\core\indexing
+D:\Zhuan_OS\core\query
+D:\Zhuan_OS\data\events
+D:\Zhuan_OS\data\zhuan_os.db
+```
+
+The bot must continue to write captures through Event Bus first. JSONL event logs remain source of truth. SQLite remains a rebuildable query index. Telegram query buttons must read SQLite through the shared query layer, not raw SQL and not Vault scans.
+
+Optional legacy Markdown fallback is local helper output only. It is not source of truth and must not point into `legacy_removed`.
+
+### Paths That Remain Source Of Truth
+
+```text
+D:\Zhuan_OS\data\events\events-YYYY-MM.jsonl
+```
+
+### Paths That Remain Rebuildable Indexes
+
+```text
+D:\Zhuan_OS\data\zhuan_os.db
+D:\Zhuan_OS\data\index_state.json
+```
+
+### Deprecated Paths
+
+These root paths are deprecated for active operation:
+
+```text
+D:\Zhuan_OS\08_Logs
+D:\Zhuan_OS\logs
+D:\Zhuan_OS\00_Inbox
+D:\Zhuan_OS\01_Inbox
+D:\Zhuan_OS\04_Prompts
+D:\Zhuan_OS\prompts
+```
+
+Do not recreate them for normal operation unless a later sprint explicitly approves a compatibility shim.
+
+### Next Sprint Rename Plan
+
+Do not rename apps in Sprint C1. In a later sprint, after tests are stable and imports are mapped, consider:
+
+```text
+apps\zhuan-telegram-bot -> apps\telegram_bot
+apps\web-dashboard -> apps\web_dashboard
+```
+
+Before that rename sprint:
+
+1. Add import compatibility tests.
+2. Update launcher scripts.
+3. Update README and operation docs.
+4. Run full tests and manual bot smoke checks.
+5. Stage by exact file names only.

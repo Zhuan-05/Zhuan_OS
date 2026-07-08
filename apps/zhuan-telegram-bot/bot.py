@@ -18,8 +18,9 @@ from query_adapter import get_dashboard_link_message, get_recent_message, get_se
 
 APP_DIR = Path(__file__).resolve().parent
 ROOT_DIR = APP_DIR.parents[1]
-INBOX_DIR = ROOT_DIR / "08_Logs" / "telegram_inbox"
-MEDIA_DIR = ROOT_DIR / "08_Logs" / "telegram_media"
+LEGACY_CAPTURE_ROOT = ROOT_DIR / "agent_workspace" / "inbox"
+INBOX_DIR = LEGACY_CAPTURE_ROOT / "telegram_inbox"
+MEDIA_DIR = LEGACY_CAPTURE_ROOT / "telegram_media"
 LOGGER = logging.getLogger("zhuan.telegram_bot")
 LEGACY_MARKDOWN_FALLBACK_ENV = "LEGACY_MARKDOWN_FALLBACK"
 EVENT_BUS_FAILURE_MESSAGE = (
@@ -27,36 +28,79 @@ EVENT_BUS_FAILURE_MESSAGE = (
     "Check logs and run D:\\Zhuan_OS\\scripts\\health_check.py."
 )
 
-BUTTON_BEFORE_AI = "Think Before AI"
+BUTTON_CAPTURE = "Capture"
+BUTTON_TODAY = "Today"
+BUTTON_DECISION = "Decision"
+BUTTON_REVIEW = "Review"
+BUTTON_SEARCH = "Search"
+BUTTON_MORE = "More"
+
 BUTTON_QUICK_CAPTURE = "Quick Capture"
 BUTTON_STUDY_LOG = "Study Log"
-BUTTON_ASSIGNMENT_PROJECT = "Assignment / Project"
-BUTTON_DECISION = "⚖️ Decision Log"
-BUTTON_CONVERSATION_LOG = "Conversation Log"
-BUTTON_MISTAKE = "❌ Mistake Log"
+BUTTON_MISTAKE = "Mistake Log"
 BUTTON_PRINCIPLE = "Principle Log"
+BUTTON_FOOD_LIFE = "Food / Life"
+BUTTON_PHOTO = "Photo"
+
 BUTTON_NIGHT_REVIEW = "Night Review"
-BUTTON_TODAY = "Today Summary"
-BUTTON_QUERY_TODAY = "Today"
+BUTTON_WEEKLY_REVIEW = "Weekly Review"
+BUTTON_MISTAKE_REVIEW = "Mistake Review"
+BUTTON_PRINCIPLE_EXTRACT = "Principle Extract"
+
 BUTTON_RECENT = "Recent"
-BUTTON_SEARCH = "Search"
 BUTTON_DASHBOARD_LINK = "Dashboard Link"
 BUTTON_EXPORT = "Export Today"
-BUTTON_HELP = "❓ Help"
-BUTTON_BACK = "⬅️ Back"
+BUTTON_HEALTH_CHECK = "Health Check"
+BUTTON_HELP = "Help"
+BUTTON_SETTINGS = "Settings"
+BUTTON_BACK = "Back"
 
-MAIN_MENU_BUTTONS = [
-    [BUTTON_BEFORE_AI, BUTTON_QUICK_CAPTURE],
-    [BUTTON_STUDY_LOG, BUTTON_ASSIGNMENT_PROJECT],
-    [BUTTON_DECISION, BUTTON_CONVERSATION_LOG],
-    [BUTTON_MISTAKE, BUTTON_PRINCIPLE],
-    [BUTTON_NIGHT_REVIEW, BUTTON_TODAY],
-    [BUTTON_QUERY_TODAY, BUTTON_RECENT],
-    [BUTTON_SEARCH, BUTTON_DASHBOARD_LINK],
-    [BUTTON_EXPORT, BUTTON_HELP],
+BUTTON_BEFORE_AI = "Think Before AI"
+BUTTON_ASSIGNMENT_PROJECT = "Assignment / Project"
+BUTTON_DECISION_LEGACY = "⚖️ Decision Log"
+BUTTON_CONVERSATION_LOG = "Conversation Log"
+BUTTON_MISTAKE_LEGACY = "❌ Mistake Log"
+BUTTON_TODAY_LEGACY = "Today Summary"
+BUTTON_HELP_LEGACY = "❓ Help"
+BUTTON_BACK_LEGACY = "⬅️ Back"
+
+MAIN_MENU = [
+    [BUTTON_CAPTURE, BUTTON_TODAY],
+    [BUTTON_DECISION, BUTTON_REVIEW],
+    [BUTTON_SEARCH, BUTTON_MORE],
 ]
-MAIN_MENU_BUTTON_SET = {button for row in MAIN_MENU_BUTTONS for button in row}
-CANCEL_TEXTS = {"/cancel", "cancel", "back", "取消", "返回", BUTTON_BACK}
+CAPTURE_MENU = [
+    [BUTTON_QUICK_CAPTURE, BUTTON_STUDY_LOG],
+    [BUTTON_MISTAKE, BUTTON_PRINCIPLE],
+    [BUTTON_FOOD_LIFE, BUTTON_PHOTO],
+    [BUTTON_BACK],
+]
+REVIEW_MENU = [
+    [BUTTON_NIGHT_REVIEW, BUTTON_WEEKLY_REVIEW],
+    [BUTTON_MISTAKE_REVIEW, BUTTON_PRINCIPLE_EXTRACT],
+    [BUTTON_BACK],
+]
+MORE_MENU = [
+    [BUTTON_RECENT, BUTTON_DASHBOARD_LINK],
+    [BUTTON_EXPORT, BUTTON_HEALTH_CHECK],
+    [BUTTON_HELP, BUTTON_SETTINGS],
+    [BUTTON_BACK],
+]
+DISPLAYED_MENU_BUTTON_SET = {
+    button for menu in [MAIN_MENU, CAPTURE_MENU, REVIEW_MENU, MORE_MENU] for row in menu for button in row
+}
+LEGACY_MENU_BUTTON_SET = {
+    BUTTON_BEFORE_AI,
+    BUTTON_ASSIGNMENT_PROJECT,
+    BUTTON_DECISION_LEGACY,
+    BUTTON_CONVERSATION_LOG,
+    BUTTON_MISTAKE_LEGACY,
+    BUTTON_TODAY_LEGACY,
+    BUTTON_HELP_LEGACY,
+    BUTTON_BACK_LEGACY,
+}
+MENU_BUTTON_SET = DISPLAYED_MENU_BUTTON_SET | LEGACY_MENU_BUTTON_SET
+CANCEL_TEXTS = {"/cancel", "cancel", "back", "取消", "返回", BUTTON_BACK, BUTTON_BACK_LEGACY}
 FLOW_BUTTONS = [
     [BUTTON_BACK],
     [BUTTON_QUICK_CAPTURE, BUTTON_TODAY],
@@ -68,12 +112,13 @@ MENU_BUTTON_TO_FLOW = {
     BUTTON_STUDY_LOG: "study_log",
     BUTTON_ASSIGNMENT_PROJECT: "assignment_project",
     BUTTON_DECISION: "decision",
+    BUTTON_DECISION_LEGACY: "decision",
     BUTTON_CONVERSATION_LOG: "conversation_log",
     BUTTON_MISTAKE: "mistake",
+    BUTTON_MISTAKE_LEGACY: "mistake",
     BUTTON_PRINCIPLE: "principle",
     BUTTON_NIGHT_REVIEW: "review",
 }
-
 QUICK_CAPTURE_BUTTONS = [
     ["Study", "Spend", "Exercise"],
     ["Assignment", "Conversation"],
@@ -93,10 +138,12 @@ QUICK_CAPTURE_CATEGORIES = {
     "Idea": "idea",
 }
 
-MAIN_MENU_KEYBOARD = ReplyKeyboardMarkup(MAIN_MENU_BUTTONS, resize_keyboard=True)
+MAIN_MENU_KEYBOARD = ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True)
+CAPTURE_MENU_KEYBOARD = ReplyKeyboardMarkup(CAPTURE_MENU, resize_keyboard=True)
+REVIEW_MENU_KEYBOARD = ReplyKeyboardMarkup(REVIEW_MENU, resize_keyboard=True)
+MORE_MENU_KEYBOARD = ReplyKeyboardMarkup(MORE_MENU, resize_keyboard=True)
 QUICK_CAPTURE_KEYBOARD = ReplyKeyboardMarkup(QUICK_CAPTURE_BUTTONS, resize_keyboard=True)
 FLOW_KEYBOARD = ReplyKeyboardMarkup(FLOW_BUTTONS, resize_keyboard=True)
-
 CATEGORY_PREFIXES = {
     "spend": "spend",
     "expense": "spend",
@@ -472,7 +519,7 @@ def is_cancel_text(text: str) -> bool:
 
 
 def is_main_menu_button(text: str) -> bool:
-    return text in MAIN_MENU_BUTTON_SET
+    return text in MENU_BUTTON_SET
 
 
 def build_photo_paths(now: datetime, message_id: int) -> tuple[Path, str]:
@@ -833,6 +880,16 @@ async def reply_with_main_menu(update: Update, text: str) -> None:
     await update.message.reply_text(text, reply_markup=MAIN_MENU_KEYBOARD)
 
 
+async def reply_with_capture_menu(update: Update, text: str = "Capture:") -> None:
+    await update.message.reply_text(text, reply_markup=CAPTURE_MENU_KEYBOARD)
+
+
+async def reply_with_review_menu(update: Update, text: str = "Review:") -> None:
+    await update.message.reply_text(text, reply_markup=REVIEW_MENU_KEYBOARD)
+
+
+async def reply_with_more_menu(update: Update, text: str = "More:") -> None:
+    await update.message.reply_text(text, reply_markup=MORE_MENU_KEYBOARD)
 def clear_active_flow(context: ContextTypes.DEFAULT_TYPE) -> None:
     context.user_data.pop("flow", None)
     context.user_data.pop("quick_capture_category", None)
@@ -1028,14 +1085,23 @@ async def handle_button_or_flow(update: Update, context: ContextTypes.DEFAULT_TY
         if question is not None:
             await update.message.reply_text(question, reply_markup=FLOW_KEYBOARD)
             return True
-        if text in {BUTTON_TODAY, BUTTON_QUERY_TODAY}:
+        if text == BUTTON_CAPTURE:
+            await reply_with_capture_menu(update)
+            return True
+        if text == BUTTON_REVIEW:
+            await reply_with_review_menu(update)
+            return True
+        if text == BUTTON_MORE:
+            await reply_with_more_menu(update)
+            return True
+        if text in {BUTTON_TODAY, BUTTON_TODAY_LEGACY}:
             await show_today_summary(update)
             return True
         if text == BUTTON_RECENT:
             await update.message.reply_text(get_recent_message())
             return True
         if text == BUTTON_SEARCH:
-            await update.message.reply_text(get_search_message(""))
+            await update.message.reply_text("Use /search keyword")
             return True
         if text == BUTTON_DASHBOARD_LINK:
             await update.message.reply_text(get_dashboard_link_message(os.getenv("WEB_DASHBOARD_URL")))
@@ -1043,7 +1109,23 @@ async def handle_button_or_flow(update: Update, context: ContextTypes.DEFAULT_TY
         if text == BUTTON_EXPORT:
             await show_export(update)
             return True
-        if text == BUTTON_HELP:
+        if text == BUTTON_WEEKLY_REVIEW:
+            await update.message.reply_text(WEEKLY_TEMPLATE)
+            return True
+        if text == BUTTON_FOOD_LIFE:
+            context.user_data["quick_capture_category"] = "food_life"
+            await update.message.reply_text("Record your food / life note in one sentence.")
+            return True
+        if text == BUTTON_PHOTO:
+            await update.message.reply_text("Send a photo to capture it.", reply_markup=CAPTURE_MENU_KEYBOARD)
+            return True
+        if text == BUTTON_HEALTH_CHECK:
+            await update.message.reply_text("Run D:\\Zhuan_OS\\scripts\\health_check.py on the PC.")
+            return True
+        if text == BUTTON_SETTINGS:
+            await update.message.reply_text("Settings are configured through environment variables on the PC.")
+            return True
+        if text in {BUTTON_HELP, BUTTON_HELP_LEGACY}:
             await update.message.reply_text(COMMAND_EXAMPLES, reply_markup=MAIN_MENU_KEYBOARD)
             return True
         return True
